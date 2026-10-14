@@ -87,6 +87,8 @@ Honest gaps, in priority order:
 
 ## More
 
+- [SLO & Log Analyzer](https://github.com/M-NOVA288/Elemapi-EDA-and-Regression/tree/main/02-slo-log-analyzer): Python tool that reads this service's JSON logs and reports SLO compliance, burn-rate alerts and anomalies
+- [VoxBook](https://github.com/M-NOVA288/Vox-book-engine): retries, circuit breaker and dead-letter queue for an unreliable upstream API
 - [Setup and operations guide](docs/SETUP.md): stand up your own copy (Stripe, Supabase, Vercel)
 - [How the analyzer math works](docs/SETUP.md#analyzer-how-the-numbers-work)
 
