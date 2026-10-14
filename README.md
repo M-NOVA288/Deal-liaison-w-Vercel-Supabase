@@ -1,144 +1,93 @@
-# Deal Engine
+# Deal Liaison
 
-Full app (front end + back end) for two brands on one Next.js site:
+[![CI](https://github.com/M-NOVA288/Deal-liaison-w-Vercel-Supabase/actions/workflows/ci.yml/badge.svg)](https://github.com/M-NOVA288/Deal-liaison-w-Vercel-Supabase/actions/workflows/ci.yml)
 
-- **Deal Engine** (`/`): deal analyzer with lease check, $47 playbook, $27/mo Pro, $299 Deal Review, done-for-you plans from $2,500.
-- **Growth Check** (`/growth`): e-commerce ad and email health check, $299 Workflow Audit.
+A production full-stack service that takes real payments, built with reliability as a first-class
+requirement: SLOs with an error budget, health checks, structured logs with request tracing,
+OpenTelemetry, failure-mode tests, a containerized build, and blameless postmortems from real incidents.
 
-Also: user accounts, saved deals, Stripe payments, separate email lists (`deals` / `growth`), owner email alerts (Resend),
-Calendly booking after payment, and automation hooks.
+**Live:** [deal-engine-rose.vercel.app](https://deal-engine-rose.vercel.app) · **Health:** [/api/health](https://deal-engine-rose.vercel.app/api/health)
 
-**Stack:** Next.js (API routes) on Vercel · Supabase (database + logins) · Stripe (payments) · Make (automation)
+Two products run on one Node.js/TypeScript codebase:
+- **Deal Engine** (`/`): an SBA loan analyzer for people buying small businesses (loan amortization, debt coverage ratio, price ceiling, lease risk), with paid reviews and subscriptions.
+- **Growth Check** (`/growth`): a diagnostic for e-commerce ad and email funnels, with a paid audit.
 
----
+## Architecture
 
-## What's inside
+```
+Browser ──► Vercel edge middleware ──► Next.js API routes (Node.js, serverless) ──► Supabase Postgres (RLS)
+             • request ID                • zod input validation                    • constraints, unique indexes
+             • CORS                      • per-IP rate limits                      • migrations 001–004
+             • session refresh           • structured JSON logs + OTel spans
+                                               │
+                    ┌──────────────────────────┼───────────────────────────┐
+                    ▼                          ▼                           ▼
+             Stripe Checkout ──webhook──► /api/webhooks/stripe      Resend / Make (alerts)
+             (payments)       (signed,   (idempotent upsert;        (5 s timeout, never
+                              retried)    only place access          blocks a sale)
+                                          is granted)
+```
 
-| Endpoint | Who can use it | What it does |
+**Stack:** TypeScript, Node.js, Next.js 15, PostgreSQL (Supabase), Stripe, Vercel, Docker, GitHub Actions, OpenTelemetry, k6.
+
+## Reliability engineering
+
+| Practice | Implementation | Where |
 |---|---|---|
-| `POST /api/analyze` | Anyone (free) | Runs the deal analyzer: loan payment, cash flow after debt, DSCR, payback, offer range, verdict, red flags |
-| `POST /api/leads` | Anyone | Saves an email from your onboarding page and sends it to Make → Kit |
-| `POST /api/checkout` | Anyone (playbook) / signed-in (Pro) | Creates a Stripe Checkout page and returns its link |
-| `POST /api/webhooks/stripe` | Stripe only | Records purchases and turns Pro on/off. **The only place access is granted.** |
-| `GET/POST /api/deals` | Signed-in Pro users | Lists and saves deals |
-| `GET/PATCH/DELETE /api/deals/:id` | Owner of the deal | View, rename, move stage, add notes, update numbers, delete |
-| `POST /api/premium` | Anyone | Done-for-you plan intake; alerts you and returns your Calendly link |
-| `POST /api/auth/signup` · `/login` · `/logout` | Anyone | Accounts (password or magic link). `GET /auth/callback` finishes email links |
-| `GET /api/me` | Signed in | Profile, plan, and what they've unlocked |
-| `POST /api/billing/portal` | Signed in | Stripe page to update card, see invoices, or cancel Pro |
-| `GET /api/playbook` | Playbook buyers | 10-minute private download link |
-| `GET /api/admin/stats?days=30` | **You only** | Revenue, MRR, funnel conversion, leads by platform, premium pipeline, daily trend |
-| `GET /api/admin/premium` | **You only** | Your done-for-you client list |
-| `PATCH /api/admin/premium/:id` | **You only** | Move a client through the pipeline; `{ "quoteCents": 250000 }` creates their $2,500 Stripe payment link |
+| **SLIs / SLOs / error budget** | Checkout success, webhook first-delivery success, analyzer p95 latency, availability; budget policy that pauses features when exhausted | [`docs/SLO.md`](docs/SLO.md) |
+| **Health checks** | Liveness (`?live=1`, no dependencies) and readiness (config + DB round trip, 3 s timeout); `down` → 503, `degraded` → 200 | [`app/api/health`](app/api/health/route.ts), [`lib/health.ts`](lib/health.ts) |
+| **Observability** | One-JSON-object-per-line logs with event names, durations and request IDs; IDs returned in `x-request-id` and in 500 responses; OpenTelemetry auto-instruments requests and outbound calls | [`lib/log.ts`](lib/log.ts), [`middleware.ts`](middleware.ts), [`instrumentation.ts`](instrumentation.ts) |
+| **Idempotency** | Stripe webhooks verified by signature; purchases upserted on a unique session id, so retries and duplicate deliveries are safe; 500 deliberately triggers Stripe's retry | [`app/api/webhooks/stripe`](app/api/webhooks/stripe/route.ts) |
+| **Graceful degradation** | Alert/automation calls have hard timeouts and never throw; booking prefill falls back to a plain link | [`lib/automation.ts`](lib/automation.ts), [`app/welcome`](app/welcome/page.tsx) |
+| **Failure-mode analysis** | Every dependency: blast radius, behavior, detection, known limits | [`docs/failure-modes.md`](docs/failure-modes.md) |
+| **Fault-injection tests** | Simulated outage, hang and 5xx for downstream services; health timeout; secrets never leak from health output | [`tests/resilience.test.ts`](tests/resilience.test.ts) |
+| **Incident response** | Runbook per alert; three blameless postmortems from real incidents with tracked action items | [`docs/runbook.md`](docs/runbook.md), [`docs/postmortems`](docs/postmortems) |
+| **Automation (toil reduction)** | CI runs tests, a production build, then builds the container and probes its health endpoint on every push | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| **Containerization** | Multi-stage, non-root image with a `HEALTHCHECK` on the liveness probe; compose file with an optional Jaeger trace backend | [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) |
+| **Capacity testing** | k6 ramp test whose pass/fail thresholds are the SLOs | [`loadtest/smoke.js`](loadtest/smoke.js) |
+| **Security / least privilege** | Row-level security on every table; service key server-only; access granted only by the verified webhook; per-IP rate limits | [`supabase/setup.sql`](supabase/setup.sql), [`lib/http.ts`](lib/http.ts) |
 
-Guests who buy the playbook before making an account are linked automatically when they sign up with the same email.
+## Run it
 
-```
-deal-engine/
-├── app/sales-page.tsx       ← Deal Engine page (analyzer, offers, intake)
-├── app/growth/page.tsx      ← Growth Check page
-├── app/welcome/page.tsx     ← thank-you page after checkout (+ Calendly button)
-├── lib/analyzer.ts          ← the deal math (your "secret sauce", tested)
-├── lib/lease.ts             ← lease check
-├── lib/growth.ts            ← ad + email health check
-├── lib/automation.ts        ← Make webhook + owner email alerts
-├── supabase/migrations/     ← database tables + security rules
-├── app/api/...              ← the endpoints above
-├── tests/                   ← checks the math (analyzer, lease, growth, stats)
-└── .env.example             ← every key you need, explained
-```
-
----
-
-## Setup (about an hour, no coding required)
-
-### 1. Stripe (start first: verification can take a few days)
-1. Create an account at stripe.com and complete business verification.
-2. **Product catalog → Add product:**
-   - "Deal Playbook": one-time price (e.g. $47). Copy the **price ID** (`price_...`).
-   - "Pro": recurring monthly price (e.g. $29/mo). Copy its price ID.
-3. **Developers → API keys:** copy the **secret key**.
-4. Stay in **test mode** until everything works end to end.
-
-### 2. Supabase
-1. Create a project at supabase.com.
-2. **SQL Editor → New query:** paste all of `supabase/setup.sql` → **Run**. (It combines the two migration files, so you only run one.)
-3. **Project Settings → API:** copy the Project URL, `anon` key, and `service_role` key.
-4. **Authentication → URL Configuration:** set Site URL to your domain and add `https://YOUR-SITE/auth/callback` as a redirect URL.
-5. **Storage → playbook:** upload your playbook PDF named `deal-playbook.pdf`.
-6. After you sign up on your own site, make yourself the owner in the SQL Editor:
-   `update public.profiles set is_admin = true where email = 'you@example.com';`
-
-### 3. Deploy to Vercel
-1. Put this folder in a GitHub repository (private).
-2. At vercel.com: **Add New → Project → import the repo**.
-3. Under **Environment Variables**, add every variable from `.env.example` with your real values.
-4. Deploy. Copy your site URL and set it as `NEXT_PUBLIC_SITE_URL`, then redeploy.
-
-### 4. Connect the Stripe webhook
-1. Stripe → **Developers → Webhooks → Add endpoint**
-   - URL: `https://YOUR-SITE/api/webhooks/stripe`
-   - Events: `checkout.session.completed`, `customer.subscription.created`,
-     `customer.subscription.updated`, `customer.subscription.deleted`
-2. Copy the **signing secret** (`whsec_...`) into `STRIPE_WEBHOOK_SECRET` in Vercel → redeploy.
-3. **Settings → Billing → Customer portal:** turn it on and allow cancellations and card updates (needed for `/api/billing/portal`).
-
-### 5. Make.com automation (optional but recommended)
-1. New scenario → first module **Webhooks → Custom webhook** → copy its URL into `MAKE_WEBHOOK_URL`.
-2. Every event arrives as `{ event, at, data }`. Add a **Router** and branch on `event`:
-   - `lead.created` → Kit: add subscriber (tag with `data.source`)
-   - `purchase.completed` + `product = playbook` → Kit: tag "playbook buyer" (Kit sends the download)
-   - `subscription.updated` → Kit: tag/untag "pro"
-   - `premium.requested` → email/text yourself + add a card to your Notion client board
-
-### 6. Test the whole flow (test mode)
-- Analyzer: `curl -X POST https://YOUR-SITE/api/analyze -H "Content-Type: application/json" -d '{"askingPrice":400000,"annualRevenue":300000,"sellerProfit":150000,"ownerSalary":50000}'`
-- Buy the playbook with Stripe's test card `4242 4242 4242 4242` → check the `purchases` table in Supabase.
-- Subscribe to Pro as a signed-in user → your `profiles.plan` should flip to `pro`.
-- Cancel in Stripe → it should flip back to `free`.
-
-When all of that works, switch Stripe to **live mode**, create live prices and a live webhook, and update the keys in Vercel.
-
----
-
-## Running it on your own computer (optional)
 ```bash
 npm install
-cp .env.example .env.local   # fill in your keys
-npm test                     # checks the deal math
-npm run dev                  # http://localhost:3000
+npm test                       # 30 tests: calculation engines + failure modes
+cp .env.example .env.local     # add your own keys (see docs/SETUP.md)
+npm run dev                    # http://localhost:3000
+
+docker compose up --build      # same app in a container
+curl -s localhost:3000/api/health | jq
+
+k6 run loadtest/smoke.js       # load test against production (read-only endpoints)
 ```
-For local Stripe testing, install the Stripe CLI and run
-`stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
 
----
+## Project layout
 
-## Analyzer: how the numbers work
-- **Loan payment:** standard amortized loan on (price − down payment). Defaults: 10% down, 10.5%, 10 years. Every default can be overridden per request, and you should confirm current rates with lenders.
-- **Adjusted profit** = seller's profit − your salary (or a manager's) − yearly equipment/repairs
-- **Cash flow after debt** = adjusted profit − yearly loan payments
-- **DSCR** (debt coverage) = adjusted profit ÷ yearly loan payments. Many lenders look for roughly 1.25 or higher.
-- **Max price** = highest price where DSCR still hits 1.25 at the same terms. The **offer range** is 85–100% of the lower of that and the asking price.
-- **Verdict:** Strong (DSCR ≥ 1.5) · Workable (≥ 1.25) · Tight (1.0–1.25) · Doesn't cash flow (< 1.0 or negative)
-- **Red flags:** no owner salary, margin above 40%, price above 4× profit, no working capital, price above the DSCR ceiling.
+```
+app/                    Next.js pages and API routes
+  api/health/           liveness + readiness
+  api/webhooks/stripe/  payment webhook (idempotent)
+  growth/               Growth Check page
+lib/                    analyzer, lease, growth engines; logging; health; automation
+supabase/               schema, row-level security, migrations
+tests/                  unit tests + failure-mode tests
+docs/                   SLOs, failure modes, runbook, postmortems, setup guide
+loadtest/               k6 script
+```
 
-Every response includes a disclaimer that the results are estimates based on the user's inputs, not predictions or advice. Keep it visible anywhere results appear, including your videos.
+## Known limits and next steps
 
----
+Honest gaps, in priority order:
+1. **External uptime monitor and alert rules** for the SLOs (configured outside the repo; not set up yet).
+2. **Metrics backend.** Logs and traces exist; Prometheus/Grafana dashboards for the SLIs are not connected.
+3. **Distributed rate limiting.** The current limiter is in memory per serverless instance; move to Redis.
+4. **Circuit breaker** for the alert provider, so a long outage doesn't add latency to every sale.
+5. **Git-based deploys** gated on CI, replacing manual API deploys (see the deploy postmortem).
+6. **Single region.** One Vercel region and one Postgres instance; acceptable at current scale.
 
-## Security notes
-- `SUPABASE_SERVICE_ROLE_KEY` and `STRIPE_SECRET_KEY` are server-only. Never paste them into Framer or any front-end code.
-- Row-level security means users can only read their own profile, deals, and purchases.
-- Pro access and playbook access are granted **only** by the verified Stripe webhook.
-- Public endpoints have basic rate limiting. For heavy traffic, add Vercel's firewall or Upstash rate limiting.
+## More
 
-## Connecting your Framer page
-Add your Framer domain to `ALLOWED_ORIGINS`. Then from Framer forms or code components:
-- Email form → `POST /api/leads` with `{ email, source: "tiktok", consent: true }`
-- Buy buttons → `POST /api/checkout` with `{ product: "playbook" }` or `{ product: "pro_subscription" }`, then send the browser to the returned `url`
-- Premium form → `POST /api/premium`, then show the returned `bookingUrl`
+- [Setup and operations guide](docs/SETUP.md): stand up your own copy (Stripe, Supabase, Vercel)
+- [How the analyzer math works](docs/SETUP.md#analyzer-how-the-numbers-work)
 
-## Seeing how it sells
-Call `GET /api/admin/stats` while signed in as the owner. It returns revenue (all-time and last 30 days),
-revenue by product, active Pro members and MRR, lead → signup → buyer conversion rates, leads by platform,
-your premium pipeline by status, and a day-by-day revenue and lead trend.
+Results from the analyzers are estimates based on user inputs, not financial or lending advice.
