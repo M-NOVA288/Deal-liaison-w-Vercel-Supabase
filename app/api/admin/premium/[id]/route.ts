@@ -64,6 +64,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (error) throw error;
     return ok(data);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

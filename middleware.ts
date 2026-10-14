@@ -7,6 +7,8 @@ import { createServerClient } from '@supabase/ssr';
  *     Set ALLOWED_ORIGINS="https://yourbrand.com,https://www.yourbrand.com".
  *     The Stripe webhook is excluded (Stripe calls it server-to-server).
  *  2. Refreshes the Supabase login cookie so users stay signed in.
+ *  3. Tags every request with an x-request-id (kept if the caller sent one) and returns it in the
+ *     response, so a user's error report can be matched to the exact log lines.
  */
 const allowed = () =>
   (process.env.ALLOWED_ORIGINS || '')
@@ -32,19 +34,23 @@ export async function middleware(req: NextRequest) {
   const isWebhook = req.nextUrl.pathname.startsWith('/api/webhooks/');
   const cors = isApi && !isWebhook ? corsHeaders(req.headers.get('origin')) : {};
 
-  if (isApi && req.method === 'OPTIONS') return new NextResponse(null, { status: 204, headers: cors });
+  const id = req.headers.get('x-request-id') || crypto.randomUUID();
+  const headers = new Headers(req.headers);
+  headers.set('x-request-id', id);
 
-  let res = NextResponse.next({ request: req });
+  if (isApi && req.method === 'OPTIONS') return new NextResponse(null, { status: 204, headers: { ...cors, 'x-request-id': id } });
+
+  let res = NextResponse.next({ request: { headers } });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (url && key && !isWebhook) {
+  if (url && key && !isWebhook && req.nextUrl.pathname !== '/api/health') {
     const supabase = createServerClient(url, key, {
       cookies: {
         getAll: () => req.cookies.getAll(),
         setAll: (toSet) => {
           toSet.forEach(({ name, value }) => req.cookies.set(name, value));
-          res = NextResponse.next({ request: req });
+          res = NextResponse.next({ request: { headers } });
           toSet.forEach(({ name, value, options }) => res.cookies.set(name, value, options));
         },
       },
@@ -53,6 +59,7 @@ export async function middleware(req: NextRequest) {
   }
 
   Object.entries(cors).forEach(([k, v]) => res.headers.set(k, v));
+  res.headers.set('x-request-id', id);
   return res;
 }
 

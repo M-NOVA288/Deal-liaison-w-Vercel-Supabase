@@ -22,6 +22,6 @@ export async function POST(req: Request) {
     if (error) return fail(error.message, 400);
     return ok({ userId: data.user?.id, needsEmailConfirmation: !data.session }, 201);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

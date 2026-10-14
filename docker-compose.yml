@@ -1,0 +1,20 @@
+# Run the app in a container locally:  cp .env.example .env.local  (fill in values)  then  docker compose up --build
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      LOG_LEVEL: info
+      OTEL_SERVICE_NAME: deal-engine
+      # Uncomment with the jaeger service below to see traces at http://localhost:16686
+      # OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    restart: unless-stopped
+
+  # jaeger:
+  #   image: jaegertracing/all-in-one:1.57
+  #   ports:
+  #     - "16686:16686"
+  #     - "4318:4318"

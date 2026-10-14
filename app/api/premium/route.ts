@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     }
     return ok({ id: data.id, bookingUrl }, 201);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

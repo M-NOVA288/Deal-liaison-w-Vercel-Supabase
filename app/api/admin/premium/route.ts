@@ -12,6 +12,6 @@ export async function GET(req: Request) {
     if (error) throw error;
     return ok({ requests: data });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

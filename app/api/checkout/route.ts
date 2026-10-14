@@ -56,6 +56,6 @@ export async function POST(req: Request) {
 
     return ok({ url: session.url });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

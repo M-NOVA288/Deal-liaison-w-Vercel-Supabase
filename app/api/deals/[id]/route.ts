@@ -23,7 +23,7 @@ export async function GET(req: Request, { params }: Ctx) {
     if (!data) return fail('Deal not found.', 404);
     return ok(data);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }
 
@@ -48,7 +48,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!data) return fail('Deal not found.', 404);
     return ok(data);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }
 
@@ -62,6 +62,6 @@ export async function DELETE(req: Request, { params }: Ctx) {
     if (!data?.length) return fail('Deal not found.', 404);
     return ok({ deleted: id });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

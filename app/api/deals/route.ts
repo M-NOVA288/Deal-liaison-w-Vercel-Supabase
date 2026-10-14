@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     if (error) throw error;
     return ok({ deals: data });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }
 
@@ -57,6 +57,6 @@ export async function POST(req: Request) {
     if (error) throw error;
     return ok({ id: data.id, results }, 201);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

@@ -1,3 +1,8 @@
+import { log } from './log';
+
+/** Max wait per outbound call. Override with DEPENDENCY_TIMEOUT_MS (tests use a small value). */
+const timeoutMs = () => Number(process.env.DEPENDENCY_TIMEOUT_MS) || 5000;
+
 export type AutomationEvent =
   | 'lead.created'
   | 'purchase.completed'
@@ -12,7 +17,12 @@ const PRODUCT_LABELS: Record<string, string> = {
   premium_plan: 'Done-for-you plan',
 };
 
-/** Sends events to Make (optional) and emails the owner about requests and sales. Never throws. */
+/**
+ * Sends events to Make (optional) and emails the owner about requests and sales.
+ *
+ * Reliability contract: this NEVER throws and never waits more than ~5s per dependency.
+ * A sale or signup must succeed even if Make or Resend is down, so failures are logged, not raised.
+ */
 export async function emitEvent(event: AutomationEvent, data: Record<string, unknown>) {
   await Promise.all([sendToMake(event, data), alertOwner(event, data)]);
 }
@@ -21,14 +31,15 @@ async function sendToMake(event: AutomationEvent, data: Record<string, unknown>)
   const url = process.env.MAKE_WEBHOOK_URL;
   if (!url) return;
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event, at: new Date().toISOString(), data }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs()),
     });
+    if (!res.ok) log('warn', 'dependency.make.failed', { automationEvent: event, status: res.status });
   } catch (err) {
-    console.error(`[automation] failed to send ${event}`, err);
+    log('warn', 'dependency.make.failed', { automationEvent: event, err });
   }
 }
 
@@ -76,10 +87,11 @@ async function alertOwner(event: AutomationEvent, data: Record<string, unknown>)
         subject,
         text: lines.join('\n'),
       }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs()),
     });
-    if (!res.ok) console.error('[alert] email failed', res.status, await res.text().catch(() => ''));
+    if (!res.ok) log('warn', 'dependency.resend.failed', { automationEvent: event, status: res.status, body: (await res.text().catch(() => '')).slice(0, 300) });
+    else log('info', 'alert.sent', { automationEvent: event });
   } catch (err) {
-    console.error('[alert] email failed', err);
+    log('warn', 'dependency.resend.failed', { automationEvent: event, err });
   }
 }

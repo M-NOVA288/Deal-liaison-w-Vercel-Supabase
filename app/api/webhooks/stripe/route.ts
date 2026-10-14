@@ -3,6 +3,7 @@ import { stripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { emitEvent } from '@/lib/automation';
 import { env } from '@/lib/env';
+import { log, requestId } from '@/lib/log';
 
 export async function POST(req: Request) {
   const signature = req.headers.get('stripe-signature');
@@ -13,10 +14,14 @@ export async function POST(req: Request) {
     const raw = await req.text();
     event = stripe().webhooks.constructEvent(raw, signature, env('STRIPE_WEBHOOK_SECRET'));
   } catch (err) {
-    console.error('[stripe] bad signature', err);
+    log('warn', 'webhook.stripe.bad_signature', { requestId: requestId(req), err });
     return new Response('Invalid signature', { status: 400 });
   }
 
+  // Stripe retries any non-2xx for up to 3 days, so handlers must be idempotent:
+  // purchases are keyed on stripe_session_id and upserted with ignoreDuplicates.
+  const start = Date.now();
+  const base = { requestId: requestId(req), stripeEventId: event.id, type: event.type };
   try {
     switch (event.type) {
       case 'checkout.session.completed':
@@ -30,9 +35,11 @@ export async function POST(req: Request) {
       default:
         break;
     }
+    log('info', 'webhook.stripe.processed', { ...base, ms: Date.now() - start });
     return new Response('ok', { status: 200 });
   } catch (err) {
-    console.error(`[stripe] failed handling ${event.type}`, err);
+    // 500 makes Stripe retry later, which is safe because processing is idempotent.
+    log('error', 'webhook.stripe.failed', { ...base, ms: Date.now() - start, err });
     return new Response('Webhook handler failed', { status: 500 });
   }
 }
@@ -103,7 +110,7 @@ async function onSubscriptionChange(sub: Stripe.Subscription) {
     ? await query.eq('id', userId).select('id, email')
     : await query.eq('stripe_customer_id', customerId).select('id, email');
   if (error) throw error;
-  if (!data?.length) console.warn(`[stripe] no profile found for subscription ${sub.id}`);
+  if (!data?.length) log('warn', 'webhook.stripe.no_profile', { subscriptionId: sub.id });
 
   await emitEvent('subscription.updated', {
     status: sub.status, plan: update.plan, email: data?.[0]?.email, userId: data?.[0]?.id,

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Tests and production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Unit and failure-mode tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Type check (report only)
+        run: npm run typecheck
+        continue-on-error: true
+
+  docker:
+    name: Container build and health check
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t deal-engine:ci .
+      - name: Start container and wait for liveness
+        run: |
+          docker run -d --name app -p 3000:3000 deal-engine:ci
+          for i in $(seq 1 30); do
+            if curl -fsS "http://localhost:3000/api/health?live=1"; then echo; echo "container is live"; exit 0; fi
+            sleep 2
+          done
+          docker logs app
+          exit 1
+      - name: Readiness reports "down" without secrets (expected 503)
+        run: |
+          code=$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:3000/api/health)
+          cat /tmp/health.json; echo
+          test "$code" = "503"

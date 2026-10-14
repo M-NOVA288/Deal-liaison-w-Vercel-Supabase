@@ -17,6 +17,6 @@ export async function GET(req: Request) {
     if (error) throw error;
     return ok({ url: data.signedUrl, expiresInSeconds: 600 });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

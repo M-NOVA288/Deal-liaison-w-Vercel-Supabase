@@ -23,6 +23,6 @@ export async function POST(req: Request) {
     if (lead.consent) await emitEvent('lead.created', lead);
     return ok({ ok: true }, 201);
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

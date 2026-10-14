@@ -32,6 +32,6 @@ export async function POST(req: Request) {
       expiresAt: data.session.expires_at,
     });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }

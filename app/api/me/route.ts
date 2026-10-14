@@ -24,6 +24,6 @@ export async function GET(req: Request) {
       },
     });
   } catch (err) {
-    return handleError(err);
+    return handleError(err, req);
   }
 }
