@@ -82,7 +82,7 @@ Honest gaps, in priority order:
 2. **Metrics backend.** Logs and traces exist; Prometheus/Grafana dashboards for the SLIs are not connected.
 3. **Distributed rate limiting.** The current limiter is in memory per serverless instance; move to Redis.
 4. **Circuit breaker** for the alert provider, so a long outage doesn't add latency to every sale.
-5. **Git-based deploys** gated on CI, replacing manual API deploys (see the deploy postmortem).
+5. **Gate production on CI automatically.** Production now builds from `main` on GitHub; the next step is making it wait for a green CI run.
 6. **Single region.** One Vercel region and one Postgres instance; acceptable at current scale.
 
 ## More

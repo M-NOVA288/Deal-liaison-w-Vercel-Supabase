@@ -1,6 +1,6 @@
 # Deploy pipeline blocked by expired credential scope
 
-**Date:** 2026-10-12 · **Severity:** SEV-3 (no customer impact; changes couldn't ship) · **Status:** Partially done
+**Date:** 2026-10-12 · **Severity:** SEV-3 (no customer impact; changes couldn't ship) · **Status:** Mostly done
 
 ## Summary
 Deploys failed with `403 forbidden` for the team scope after the deploy credential lost access to
@@ -33,5 +33,6 @@ of an evening. The live site kept working on the previous version.
 |---|---|---|
 | Source of truth moved to GitHub; CI builds every push | Automation | Done |
 | Container image builds in CI, giving a deploy path independent of Vercel | Automation | Done (`Dockerfile`, CI `docker` job) |
-| Connect Vercel to the GitHub repo so `main` deploys automatically after CI | Automation | Open |
+| Deploy production from the GitHub repo (git source) instead of uploaded files | Automation | Done (2026-10-14) |
+| Make `main` deploy automatically only after CI passes | Automation | Open |
 | Document the redeploy-with-env-change path (redeploy an existing deployment instead of re-uploading) | Docs | Done (runbook) |

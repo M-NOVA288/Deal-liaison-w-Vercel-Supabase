@@ -35,4 +35,5 @@ API deploy defaulted to the production target, and nothing checked that the file
 | Use preview deployments (no `target`) for experiments; production only for verified builds | Process | Done |
 | Verify the live site after every production deploy (fetch the page and check key content) | Process | Done |
 | CI builds the full app on every push; a broken build fails before anyone deploys it | Automation | Done (`.github/workflows/ci.yml`) |
-| Connect the GitHub repo to Vercel so production deploys come only from `main` after CI passes | Automation | Open |
+| Production deploys built from the GitHub `main` branch, after a preview build of the same commit | Process | Done (2026-10-14) |
+| Gate production on CI automatically | Automation | Open |

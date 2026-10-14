@@ -9,4 +9,4 @@ and deployment history.
 |---|---|---|---|
 | 2026-10-12 | [Incomplete build promoted to production (near miss)](2026-10-12-incomplete-production-deploy.md) | SEV-3 (near miss) | Actions done |
 | 2026-10-12 | [Payments configured against the wrong Stripe account](2026-10-12-wrong-stripe-account.md) | SEV-2 (pre-launch) | Actions done |
-| 2026-10-12 | [Deploy pipeline blocked by expired credential scope](2026-10-12-deploy-credential-scope.md) | SEV-3 | Partially done |
+| 2026-10-12 | [Deploy pipeline blocked by expired credential scope](2026-10-12-deploy-credential-scope.md) | SEV-3 | Mostly done |
